@@ -1,6 +1,6 @@
 fastapi
-uvicorn
-sentence-transformers
+uvicorn[standard]
+sentence-transformers>=2.2
 scikit-learn
 numpy
-pydantic
+pandas
