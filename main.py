@@ -1,78 +1,55 @@
-# app.py
-
-from fastapi import FastAPI, HTTPException
+from fastapi import FastAPI
 from pydantic import BaseModel
-from typing import List
-import re
-import uvicorn
-
-import numpy as np
-import pandas as pd
 from sentence_transformers import SentenceTransformer
 from sklearn.feature_extraction.text import TfidfVectorizer
 from sklearn.metrics.pairwise import cosine_similarity
-from sklearn.preprocessing import MinMaxScaler
 
-app = FastAPI(title="Hybrid Text Similarity API")
+app = FastAPI()
 
-# Load SBERT model once (caching)
+# Load SBERT model (lightweight)
 sbert_model = SentenceTransformer('all-MiniLM-L6-v2')
 
-# Sample small corpus for TF-IDF fitting - can be replaced with your own dataset for better vectorizer
-corpus = [
-    "This is a sample sentence.",
-    "Another example sentence for TF-IDF.",
-    "Semantic textual similarity using SBERT and TF-IDF.",
-    "Lightweight text similarity API."
+# Sample corpus to fit TF-IDF
+sample_corpus = [
+    "this is a sample text",
+    "another sentence for tfidf training",
+    "semantic similarity model",
+    "text embeddings for nlp tasks"
 ]
+tfidf = TfidfVectorizer()
+tfidf.fit(sample_corpus)
 
-tfidf_vectorizer = TfidfVectorizer()
-tfidf_vectorizer.fit(corpus)
-
-# Initialize MinMaxScaler - fit with typical min/max [0,1]
-scaler = MinMaxScaler()
-scaler.fit([[0, 0], [1, 1]])
-
-# Weights for hybrid scoring
+# Define weights
 W_SBERT = 0.8
 W_TFIDF = 0.2
 
-# Pydantic model for input data
-class TextPair(BaseModel):
+class InputText(BaseModel):
     text1: str
     text2: str
 
-class SimilarityResponse(BaseModel):
-    sbert_similarity: float
-    tfidf_similarity: float
-    hybrid_similarity: float
+@app.get("/")
+def root():
+    return {"message": "Hybrid Semantic Similarity API is up!"}
 
-def clean_text(text: str) -> str:
-    if not text:
-        return ""
-    text = text.lower()
-    text = re.sub(r"http\S+", "", text)              # Remove URLs
-    text = re.sub(r"[^a-z0-9\s]", "", text)          # Remove punctuation
-    text = re.sub(r"\s+", " ", text).strip()         # Remove extra spaces
-    return text
+@app.post("/similarity")
+def compute_similarity(data: InputText):
+    # Get texts
+    t1, t2 = data.text1, data.text2
 
-def cosine_sim(vec1, vec2):
-    return cosine_similarity([vec1], [vec2])[0][0]
+    # SBERT cosine similarity
+    emb1 = sbert_model.encode([t1])[0]
+    emb2 = sbert_model.encode([t2])[0]
+    sbert_sim = cosine_similarity([emb1], [emb2])[0][0]
 
-@app.post("/similarity", response_model=SimilarityResponse)
-def compute_similarity(pair: TextPair):
-    t1 = clean_text(pair.text1)
-    t2 = clean_text(pair.text2)
+    # TF-IDF cosine similarity
+    tfidf_vec1 = tfidf.transform([t1])
+    tfidf_vec2 = tfidf.transform([t2])
+    tfidf_sim = cosine_similarity(tfidf_vec1, tfidf_vec2)[0][0]
 
-    if not t1 or not t2:
-        raise HTTPException(status_code=400, detail="Both texts must be non-empty after cleaning.")
+    # Hybrid score
+    hybrid_score = W_SBERT * sbert_sim + W_TFIDF * tfidf_sim
 
-    # SBERT embeddings
-    emb1 = sbert_model.encode(t1)
-    emb2 = sbert_model.encode(t2)
-    sbert_sim = cosine_sim(emb1, emb2)
-
-    # TF-IDF vectors
-    tfidf_vec1 = tfidf_vectorizer.transform([t1]).toarray()[0]
-    tfidf_vec2 = tfidf_vectorizer.transform([t2]).toarray()[0]
-    tfi
+    return {
+        
+        "hybrid_similarity": round(hybrid_score, 4)
+    }
